@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>La Familia de Ruly - 3D Threshold Landslide Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen">
+
+    <div class="container mx-auto px-4 py-8">
+
+        <!-- Header -->
+        <header class="flex justify-between items-center border-b border-slate-700 pb-4 mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-emerald-400">La Familia de Ruly</h1>
+                <p class="text-slate-400 text-sm">IoT Landslide Mitigation via 3D Hydrological Threshold</p>
+            </div>
+            <div class="text-right">
+                <div id="system-status" class="px-4 py-2 rounded-full font-semibold text-sm bg-slate-800 text-slate-300 mb-1">
+                    Connecting...
+                </div>
+                <p id="last-updated" class="text-slate-500 text-xs">Waiting for data...</p>
+            </div>
+        </header>
+
+        <!-- Soil Moisture Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 20cm (Topsoil)</h3>
+                <p id="val-20" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
+                <!-- ASM delta: hanya tampil di layer 20cm karena itu yang digunakan di 3D threshold -->
+                <p id="asm-badge" class="mt-2 text-xs font-medium text-slate-500">ASM Δ: —</p>
+            </div>
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 40cm</h3>
+                <p id="val-40" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
+            </div>
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 60cm (Subsoil)</h3>
+                <p id="val-60" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
+            </div>
+        </div>
+
+        <!-- 3D Threshold Indicator Row (P + API) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Daily Precipitation (P)</h3>
+                <p id="val-p" class="text-3xl font-bold text-sky-400 mt-2">— mm</p>
+                <p class="text-slate-500 text-xs mt-1">Trigger threshold: &gt;40 mm</p>
+            </div>
+            <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Antecedent Index (API)</h3>
+                <p id="val-api" class="text-3xl font-bold text-violet-400 mt-2">— mm</p>
+                <p class="text-slate-500 text-xs mt-1">6-day accumulation from Open-Meteo</p>
+            </div>
+            <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Active Node</h3>
+                <p id="val-node" class="text-3xl font-bold text-slate-300 mt-2">—</p>
+                <p class="text-slate-500 text-xs mt-1">Last packet sender</p>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+            <h2 class="text-xl font-bold text-slate-200 mb-4">Multi-Depth Infiltration Graph</h2>
+            <div class="relative h-96 w-full">
+                <canvas id="telemetryChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const apiEndpoint = "https://script.google.com/macros/s/AKfycbwgTjxq0osYijCIRPKl3vEc6UwoSfjTxmntMRvnVri3t_-bhMEmapv7KDlY4PB9PT5f/exec";
+
+        let myChart;
+        let prevM20 = null; // Untuk menghitung ASM delta di sisi frontend
+
+        // ----------------------------------------------------------------
+        // Chart Setup
+        // ----------------------------------------------------------------
+        function initChart() {
+            const ctx = document.getElementById('telemetryChart').getContext('2d');
+
+            // Warna teks chart disesuaikan agar terbaca di atas background gelap
+            const axisColor  = '#94a3b8'; // slate-400
+            const gridColor  = '#334155'; // slate-700
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: '20cm (%)', data: [], borderColor: '#34d399', tension: 0.3, borderWidth: 2, pointRadius: 0 },
+                        { label: '40cm (%)', data: [], borderColor: '#60a5fa', tension: 0.3, borderWidth: 2, pointRadius: 0 },
+                        { label: '60cm (%)', data: [], borderColor: '#fbbf24', tension: 0.3, borderWidth: 2, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            labels: { color: axisColor, font: { size: 12 } }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            min: 0, max: 100,
+                            grid: { color: gridColor },
+                            ticks: { color: axisColor, font: { size: 11 } }
+                        },
+                        x: {
+                            grid: { color: gridColor },
+                            ticks: { color: axisColor, font: { size: 11 }, maxRotation: 0 }
+                        }
+                    }
+                }
+            });
+        }
+
+      // Status-based color themin
+        function applyStatusTheme(status) {
+            const statusBadge = document.getElementById('system-status');
+            const valEls = ['val-20', 'val-40', 'val-60'];
+
+            statusBadge.innerText = `STATUS: ${status}`;
+
+            if (status === 'CRITICAL') {
+                statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-red-600 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.7)]';
+                valEls.forEach(id => {
+                    document.getElementById(id).classList.replace('text-emerald-400', 'text-red-400');
+                    document.getElementById(id).classList.remove('text-yellow-400');
+                });
+            } else if (status === 'WARNING') {
+                statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-yellow-500 text-slate-900';
+                valEls.forEach(id => {
+                    document.getElementById(id).classList.replace('text-red-400', 'text-yellow-400');
+                    document.getElementById(id).classList.replace('text-emerald-400', 'text-yellow-400');
+                });
+            } else {
+                statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-emerald-500 text-slate-900';
+                valEls.forEach(id => {
+                    document.getElementById(id).classList.replace('text-red-400', 'text-emerald-400');
+                    document.getElementById(id).classList.replace('text-yellow-400', 'text-emerald-400');
+                });
+            }
+        }
+
+       // Main data fetch
+       async function updateDashboard() {
+            try {
+                const response = await fetch(apiEndpoint);
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch(_) {
+                    throw new Error("Response bukan JSON. Cek deployment GAS.");
+                }
+
+                if (!data || data.length === 0) {
+                    const badge = document.getElementById('system-status');
+                    badge.innerText   = 'Online — Waiting for sensor';
+                    badge.className   = 'px-4 py-2 rounded-full font-semibold text-sm bg-slate-700 text-slate-300';
+                    document.getElementById('last-updated').innerText =
+                        `Connected at ${new Date().toLocaleTimeString('id-ID')} — No data yet`;
+                    return;
+                }
+
+                const latest = data[data.length - 1];
+
+                // Value dari sensor
+                document.getElementById('val-20').innerText = latest.m20 + '%';
+                document.getElementById('val-40').innerText = latest.m40 + '%';
+                document.getElementById('val-60').innerText = latest.m60 + '%';
+
+                // Node ID
+                if (latest.node_id) {
+                    document.getElementById('val-node').innerText = latest.node_id;
+                }
+
+                // Data presipitasi dari gateway (dikirim sebagai field 'p')
+                if (latest.p !== undefined) {
+                    document.getElementById('val-p').innerText = parseFloat(latest.p).toFixed(1) + ' mm';
+                }
+
+                // ASM delta: hitung selisih m20 antar pembacaan di sisi frontend
+                // sebagai fallback jika gateway tidak mengirim field ASM eksplisit
+                const asmBadge = document.getElementById('asm-badge');
+                if (prevM20 !== null) {
+                    const delta = latest.m20 - prevM20;
+                    const sign  = delta > 0 ? '+' : '';
+                    asmBadge.innerText = `ASM Δ: ${sign}${delta}%`;
+                    asmBadge.className = delta > 0
+                        ? 'mt-2 text-xs font-medium text-orange-400'  // infiltrasi aktif
+                        : delta < 0
+                            ? 'mt-2 text-xs font-medium text-sky-400'   // draining
+                            : 'mt-2 text-xs font-medium text-slate-500'; // stabil
+                } else {
+                    asmBadge.innerText = 'ASM Δ: —';
+                }
+                prevM20 = latest.m20;
+
+                // Status theming
+                applyStatusTheme(latest.status || 'SAFE');
+
+                // Timestamp last updated
+                const now = new Date();
+                document.getElementById('last-updated').innerText =
+                    `Last updated: ${now.toLocaleTimeString('id-ID')}`;
+
+                // Update chart (15 data terakhir)
+                const recentData = data.slice(-15);
+                const labels = recentData.map(item => {
+                    const parts = (item.timestamp || '').split(' ');
+                    return parts.length > 1 ? parts[1] : item.timestamp;
+                });
+
+                myChart.data.labels        = labels;
+                myChart.data.datasets[0].data = recentData.map(item => item.m20);
+                myChart.data.datasets[1].data = recentData.map(item => item.m40);
+                myChart.data.datasets[2].data = recentData.map(item => item.m60);
+                myChart.update();
+
+            } catch (error) {
+                console.error('Fetch error:', error);
+                const badge = document.getElementById('system-status');
+                badge.innerText   = 'API Error — Retrying...';
+                badge.className   = 'px-4 py-2 rounded-full font-semibold text-sm bg-slate-700 text-red-400';
+                document.getElementById('last-updated').innerText = `Error at ${new Date().toLocaleTimeString('id-ID')}`;
+            }
+        }
+
+        // Fetch API from Google Sheets
+        async function updateWeatherMeta() {
+            try {
+                const response = await fetch(apiEndpoint);
+                const data     = await response.json();
+                if (!data || data.length === 0) return;
+                const latest = data[data.length - 1];
+
+                
+                if (latest.api !== undefined) {
+                    document.getElementById('val-api').innerText = parseFloat(latest.api).toFixed(1) + ' mm';
+                }
+            } catch (_) {}
+        }
+
+        // ----------------------------------------------------------------
+        // Init
+        // ----------------------------------------------------------------
+        window.onload = () => {
+            initChart();
+            updateDashboard();
+            updateWeatherMeta();
+            setInterval(updateDashboard, 5000);
+            setInterval(updateWeatherMeta, 3600000); // Refresh metadata API tiap 1 jam
+        };
+    </script>
+</body>
+</html>
