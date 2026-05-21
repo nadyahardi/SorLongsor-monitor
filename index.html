@@ -122,38 +122,67 @@
             });
         }
 
-      // Status-based color themin
+        // Status-based color theming
         function applyStatusTheme(status) {
             const statusBadge = document.getElementById('system-status');
             const valEls = ['val-20', 'val-40', 'val-60'];
 
             statusBadge.innerText = `STATUS: ${status}`;
 
-            if (status === 'CRITICAL') {
+            if (status === 'NO SIGNAL') {
+                statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-orange-600 text-white animate-pulse';
+                valEls.forEach(id => {
+                    const el = document.getElementById(id);
+                    el.className = 'text-4xl font-bold text-slate-500 mt-2';
+                });
+            } else if (status === 'CRITICAL') {
                 statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-red-600 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.7)]';
                 valEls.forEach(id => {
                     document.getElementById(id).classList.replace('text-emerald-400', 'text-red-400');
+                    document.getElementById(id).classList.replace('text-slate-500',   'text-red-400');
                     document.getElementById(id).classList.remove('text-yellow-400');
                 });
             } else if (status === 'WARNING') {
                 statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-yellow-500 text-slate-900';
                 valEls.forEach(id => {
-                    document.getElementById(id).classList.replace('text-red-400', 'text-yellow-400');
+                    document.getElementById(id).classList.replace('text-red-400',     'text-yellow-400');
                     document.getElementById(id).classList.replace('text-emerald-400', 'text-yellow-400');
+                    document.getElementById(id).classList.replace('text-slate-500',   'text-yellow-400');
                 });
             } else {
                 statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-emerald-500 text-slate-900';
                 valEls.forEach(id => {
-                    document.getElementById(id).classList.replace('text-red-400', 'text-emerald-400');
+                    document.getElementById(id).classList.replace('text-red-400',    'text-emerald-400');
                     document.getElementById(id).classList.replace('text-yellow-400', 'text-emerald-400');
+                    document.getElementById(id).classList.replace('text-slate-500',  'text-emerald-400');
                 });
             }
         }
 
-       // Main data fetch
-       async function updateDashboard() {
+       
+        const SIGNAL_TIMEOUT_MS = 3 * 60 * 1000; // 3 menit
+
+        function checkSignalTimeout(timestampStr) {
+            if (!timestampStr) return true;
+
+            // Format timestamp dari GAS: "22/5/2025 19.14.27" atau "5/22/2025, 7:14:27 PM"
+            // Coba parse dulu — kalau gagal, anggap stale
+            const parsed = new Date(timestampStr.replace(/\./g, ':'));
+            if (isNaN(parsed.getTime())) return false; // parse gagal, skip check
+
+            const ageMs = Date.now() - parsed.getTime();
+            return ageMs > SIGNAL_TIMEOUT_MS;
+        }
+
+        // ----------------------------------------------------------------
+        // Main data fetch
+        // ----------------------------------------------------------------
+        async function updateDashboard() {
             try {
                 const response = await fetch(apiEndpoint);
+
+                // GAS kadang mengembalikan content-type dengan charset suffix,
+                // jadi parse langsung tanpa cek header — tangkap error di catch.
                 const text = await response.text();
                 let data;
                 try {
@@ -162,6 +191,7 @@
                     throw new Error("Response bukan JSON. Cek deployment GAS.");
                 }
 
+                // Sheet kosong atau belum ada data dari sensor
                 if (!data || data.length === 0) {
                     const badge = document.getElementById('system-status');
                     badge.innerText   = 'Online — Waiting for sensor';
@@ -173,7 +203,7 @@
 
                 const latest = data[data.length - 1];
 
-                // Value dari sensor
+                // Nilai sensor utama
                 document.getElementById('val-20').innerText = latest.m20 + '%';
                 document.getElementById('val-40').innerText = latest.m40 + '%';
                 document.getElementById('val-60').innerText = latest.m60 + '%';
@@ -205,13 +235,18 @@
                 }
                 prevM20 = latest.m20;
 
-                // Status theming
-                applyStatusTheme(latest.status || 'SAFE');
+                // Cek apakah sensor sudah lama tidak mengirim data.
+                // Jika iya, override status apapun menjadi NO SIGNAL.
+                const isStale = checkSignalTimeout(latest.timestamp);
+                const displayStatus = isStale ? 'NO SIGNAL' : (latest.status || 'SAFE');
 
-                // Timestamp last updated
+                applyStatusTheme(displayStatus);
+
+                // Timestamp — tampilkan kapan data terakhir diterima jika sensor offline
                 const now = new Date();
-                document.getElementById('last-updated').innerText =
-                    `Last updated: ${now.toLocaleTimeString('id-ID')}`;
+                document.getElementById('last-updated').innerText = isStale
+                    ? `⚠ Sensor offline — last data: ${latest.timestamp}`
+                    : `Last updated: ${now.toLocaleTimeString('id-ID')}`;
 
                 // Update chart (15 data terakhir)
                 const recentData = data.slice(-15);
@@ -235,7 +270,9 @@
             }
         }
 
-        // Fetch API from Google Sheets
+
+        // Fetch API (antecedent precipitation index) dari Google Sheets
+
         async function updateWeatherMeta() {
             try {
                 const response = await fetch(apiEndpoint);
@@ -243,11 +280,11 @@
                 if (!data || data.length === 0) return;
                 const latest = data[data.length - 1];
 
-                
+                // Field 'api' perlu ditambahkan di gateway sendToGoogle() jika ingin ditampilkan
                 if (latest.api !== undefined) {
                     document.getElementById('val-api').innerText = parseFloat(latest.api).toFixed(1) + ' mm';
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         // ----------------------------------------------------------------
@@ -258,8 +295,8 @@
             updateDashboard();
             updateWeatherMeta();
             setInterval(updateDashboard, 5000);
-            setInterval(updateWeatherMeta, 3600000); // Refresh metadata API tiap 1 jam
+            setInterval(updateWeatherMeta, 3600000); // Refresh 1 jam
         };
     </script>
 </body>
-</html>
+</html> 
