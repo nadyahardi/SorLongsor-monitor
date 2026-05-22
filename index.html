@@ -6,8 +6,56 @@
     <title>La Familia de Ruly - 3D Threshold Landslide Monitoring</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            border: 3px solid transparent;
+            transition: box-shadow 0.6s ease, border-color 0.6s ease;
+            z-index: 9999;
+        }
+        body.state-critical::after {
+            border-color: rgba(220, 38, 38, 0.6);
+            box-shadow: inset 0 0 60px rgba(220, 38, 38, 0.15);
+            animation: borderPulse 2s ease-in-out infinite;
+        }
+        @keyframes borderPulse {
+            0%, 100% { box-shadow: inset 0 0 60px rgba(220, 38, 38, 0.12); }
+            50%       { box-shadow: inset 0 0 90px rgba(220, 38, 38, 0.28); }
+        }
+        .card-sensor {
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        body.state-critical .card-sensor {
+            border-color: rgba(220, 38, 38, 0.45) !important;
+            box-shadow: 0 0 18px rgba(220, 38, 38, 0.1);
+        }
+        #critical-banner {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: #991b1b;
+            color: #fee2e2;
+            text-align: center;
+            padding: 10px 16px;
+            font-weight: 600;
+            font-size: 14px;
+            letter-spacing: 0.03em;
+            z-index: 10000;
+            animation: bannerPulse 2s ease-in-out infinite;
+        }
+        body.state-critical #critical-banner { display: block; }
+        @keyframes bannerPulse {
+            0%, 100% { background: #991b1b; }
+            50%       { background: #b91c1c; }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 font-sans min-h-screen">
+
+    <div id="critical-banner">⚠ PERINGATAN KRITIS — RISIKO LONGSOR TERDETEKSI — SEGERA EVAKUASI AREA RAWAN ⚠</div>
 
     <div class="container mx-auto px-4 py-8">
 
@@ -27,18 +75,18 @@
 
         <!-- Soil Moisture Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 20cm (Topsoil)</h3>
+            <div class="card-sensor bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 30cm (Topsoil)</h3>
                 <p id="val-20" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
-                <!-- ASM delta: hanya tampil di layer 20cm karena itu yang digunakan di 3D threshold -->
+                <!-- ASM delta: hanya tampil di layer 30cm karena itu yang digunakan di 3D threshold -->
                 <p id="asm-badge" class="mt-2 text-xs font-medium text-slate-500">ASM Δ: —</p>
             </div>
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 40cm</h3>
+            <div class="card-sensor bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 60cm</h3>
                 <p id="val-40" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
             </div>
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 60cm (Subsoil)</h3>
+            <div class="card-sensor bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h3 class="text-slate-400 text-sm font-medium uppercase">Depth 90cm (Subsoil)</h3>
                 <p id="val-60" class="text-4xl font-bold text-emerald-400 mt-2">0%</p>
             </div>
         </div>
@@ -93,9 +141,9 @@
                 data: {
                     labels: [],
                     datasets: [
-                        { label: '20cm (%)', data: [], borderColor: '#34d399', tension: 0.3, borderWidth: 2, pointRadius: 0 },
-                        { label: '40cm (%)', data: [], borderColor: '#60a5fa', tension: 0.3, borderWidth: 2, pointRadius: 0 },
-                        { label: '60cm (%)', data: [], borderColor: '#fbbf24', tension: 0.3, borderWidth: 2, pointRadius: 0 }
+                        { label: '30cm (%)', data: [], borderColor: '#34d399', tension: 0.3, borderWidth: 2, pointRadius: 0 },
+                        { label: '60cm (%)', data: [], borderColor: '#60a5fa', tension: 0.3, borderWidth: 2, pointRadius: 0 },
+                        { label: '90cm (%)', data: [], borderColor: '#fbbf24', tension: 0.3, borderWidth: 2, pointRadius: 0 }
                     ]
                 },
                 options: {
@@ -122,12 +170,17 @@
             });
         }
 
+        // ----------------------------------------------------------------
         // Status-based color theming
+        // ----------------------------------------------------------------
         function applyStatusTheme(status) {
             const statusBadge = document.getElementById('system-status');
             const valEls = ['val-20', 'val-40', 'val-60'];
 
             statusBadge.innerText = `STATUS: ${status}`;
+
+            // Toggle body class — drives CSS border glow dan banner
+            document.body.classList.toggle('state-critical', status === 'CRITICAL');
 
             if (status === 'NO SIGNAL') {
                 statusBadge.className = 'px-4 py-2 rounded-full font-semibold text-sm bg-orange-600 text-white animate-pulse';
@@ -159,7 +212,9 @@
             }
         }
 
-       
+        // Cek apakah timestamp data terakhir sudah melewati batas timeout.
+        // Sensor node deep sleep setiap 10 detik — beri toleransi 3 menit
+        // untuk memperhitungkan delay WiFi gateway dan Google Sheets lag.
         const SIGNAL_TIMEOUT_MS = 3 * 60 * 1000; // 3 menit
 
         function checkSignalTimeout(timestampStr) {
@@ -270,9 +325,7 @@
             }
         }
 
-
-        // Fetch API (antecedent precipitation index) dari Google Sheets
-
+   
         async function updateWeatherMeta() {
             try {
                 const response = await fetch(apiEndpoint);
@@ -284,7 +337,7 @@
                 if (latest.api !== undefined) {
                     document.getElementById('val-api').innerText = parseFloat(latest.api).toFixed(1) + ' mm';
                 }
-            } catch (_) { }
+            } catch (_) { /* silent — sudah ditangani di updateDashboard */ }
         }
 
         // ----------------------------------------------------------------
@@ -295,8 +348,8 @@
             updateDashboard();
             updateWeatherMeta();
             setInterval(updateDashboard, 5000);
-            setInterval(updateWeatherMeta, 3600000); // Refresh 1 jam
+            setInterval(updateWeatherMeta, 3600000); // Refresh metadata API tiap 1 jam
         };
     </script>
 </body>
-</html> 
+</html>
