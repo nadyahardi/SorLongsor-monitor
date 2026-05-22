@@ -215,7 +215,7 @@
         // Cek apakah timestamp data terakhir sudah melewati batas timeout.
         // Sensor node deep sleep setiap 10 detik — beri toleransi 3 menit
         // untuk memperhitungkan delay WiFi gateway dan Google Sheets lag.
-        const SIGNAL_TIMEOUT_MS = 3 * 60 * 1000; // 3 menit
+        const SIGNAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 menit — sesuai interval checkNodeHealth GAS
 
         function checkSignalTimeout(timestampStr) {
             if (!timestampStr) return true;
@@ -303,7 +303,7 @@
                 // Timestamp — tampilkan kapan data terakhir diterima jika sensor offline
                 const now = new Date();
                 document.getElementById('last-updated').innerText = isStale
-                    ? `⚠ Sensor offline — last data: ${latest.timestamp}`
+                    ? `⚠ Node offline — data terakhir: ${latest.timestamp} (>5 menit)`
                     : `Last updated: ${now.toLocaleTimeString('id-ID')}`;
 
                 // Update chart (15 data terakhir)
