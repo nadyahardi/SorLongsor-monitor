@@ -234,7 +234,10 @@
         // ----------------------------------------------------------------
         async function updateDashboard() {
             try {
-                const response = await fetch(apiEndpoint);
+                const response = await fetch(apiEndpoint, {
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain' }
+                });
 
                 // GAS kadang mengembalikan content-type dengan charset suffix,
                 // jadi parse langsung tanpa cek header — tangkap error di catch.
@@ -325,10 +328,17 @@
             }
         }
 
-   
+        // ----------------------------------------------------------------
+        // Fetch API (antecedent precipitation index) dari Google Sheets
+        // Catatan: jika gateway sudah menyimpan field 'api' ke Sheets,
+        // tampilkan dari sana. Fallback: tampilkan "—" sampai data tersedia.
+        // ----------------------------------------------------------------
         async function updateWeatherMeta() {
             try {
-                const response = await fetch(apiEndpoint);
+                const response = await fetch(apiEndpoint, {
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain' }
+                });
                 const data     = await response.json();
                 if (!data || data.length === 0) return;
                 const latest = data[data.length - 1];
